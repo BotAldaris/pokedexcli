@@ -1,12 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
-
-	"github.com/BotAldaris/pokedexcli/internal/pokeapi"
 )
 
 type cliCommand struct {
@@ -37,6 +35,16 @@ func getCommands() map[string]cliCommand {
 			description: "Displays the previous 20 locations.",
 			callback:    commandMapb,
 		},
+		"explore": {
+			name:        "explore",
+			description: "Displays the pokemons in this area",
+			callback:    commandExplore,
+		},
+		"catch": {
+			name:        "catch",
+			description: "Try to catch a pokemon",
+			callback:    commandCatch,
+		},
 	}
 }
 
@@ -59,27 +67,11 @@ func commandExit(config *config) error {
 
 func commandMap(config *config) error {
 	if config.next == nil {
-		return errors.New("you're on the last page")
+		return errors.New("you're on the first page")
 	}
-	body, ok := config.cache.Get(*config.next)
-	locations := pokeapi.Locations{}
-	if ok {
-		err_json := json.Unmarshal(body, &locations)
-		println("Getting from cache")
-		if err_json != nil {
-			return err_json
-		}
-	} else {
-		l, err := config.pokeClient.GetLocation(config.next)
-		locations = l
-		if err != nil {
-			return err
-		}
-		location_bytes, err := json.Marshal(locations)
-		if err != nil {
-			return err
-		}
-		config.cache.Add(*config.next, location_bytes)
+	locations, err := config.pokeClient.GetLocation(config.next)
+	if err != nil {
+		return err
 	}
 	for _, location := range locations.Results {
 		fmt.Println(location.Name)
@@ -92,30 +84,48 @@ func commandMapb(config *config) error {
 	if config.previous == nil {
 		return errors.New("you're on the first page")
 	}
-	body, ok := config.cache.Get(*config.previous)
-	locations := pokeapi.Locations{}
-	if ok {
-		println("Getting from cache")
-		err_json := json.Unmarshal(body, &locations)
-		if err_json != nil {
-			return err_json
-		}
-	} else {
-		l, err := config.pokeClient.GetLocation(config.previous)
-		locations = l
-		if err != nil {
-			return err
-		}
-		location_bytes, err := json.Marshal(locations)
-		if err != nil {
-			return err
-		}
-		config.cache.Add(*config.previous, location_bytes)
+	locations, err := config.pokeClient.GetLocation(config.previous)
+	if err != nil {
+		return err
 	}
 	for _, location := range locations.Results {
 		fmt.Println(location.Name)
 	}
 	config.next = &locations.Next
 	config.previous = &locations.Previous
+	return nil
+}
+
+func commandExplore(config *config) error {
+	if config.name == nil {
+		return errors.New("you should pass a name")
+	}
+	locationArea, err := config.pokeClient.GetPokemonsInArea(*config.name)
+	if err != nil {
+		return err
+	}
+	for _, pokemon := range locationArea.PokemonEncounters {
+		fmt.Println(pokemon.Pokemon.Name)
+	}
+	return nil
+}
+
+func commandCatch(config *config) error {
+	if config.name == nil {
+		return errors.New("you should pass a name")
+	}
+	fmt.Printf("Throwing a Pokeball at %s...", *config.name)
+	pokemon, err := config.pokeClient.GetPokemon(*config.name)
+	if err != nil {
+		return err
+	}
+	i := rand.Intn(pokemon.BaseExperience/50 + 1)
+	fmt.Println(i)
+	if i == 0 {
+		config.pokemons[pokemon.Name] = pokemon
+		fmt.Printf("%s was caught!", *config.name)
+	} else {
+		fmt.Printf("%s escaped!", *config.name)
+	}
 	return nil
 }
